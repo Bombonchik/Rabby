@@ -17,7 +17,7 @@ import { GasLevel, Tx, TxPushType } from '@rabby-wallet/rabby-api/dist/types';
 import { Result } from '@rabby-wallet/rabby-security-engine';
 import { Level } from '@rabby-wallet/rabby-security-engine/dist/rules';
 import { useMemoizedFn, useRequest, useSetState, useSize } from 'ahooks';
-import { Drawer, Modal } from 'antd';
+import { Drawer, DrawerProps, Modal } from 'antd';
 import { Chain, ExplainTxResponse } from 'background/service/openapi';
 import { Account, ChainGas } from 'background/service/preference';
 import BigNumber from 'bignumber.js';
@@ -31,14 +31,14 @@ import {
 } from 'consts';
 import React, { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useScroll } from 'react-use';
+import { useAsync, useScroll } from 'react-use';
 import { useApproval } from 'ui/utils';
 import { intToHex } from 'ui/utils/number';
 import { useSecurityEngine } from 'ui/utils/securityEngine';
 import {
   ActionRequireData,
   ParsedActionData,
-} from '../../components/Actions/utils';
+} from '@rabby-wallet/rabby-action';
 import { GasLessConfig } from '../FooterBar/GasLessComponents';
 import GasSelectorHeader, {
   GasSelectorResponse,
@@ -51,21 +51,28 @@ import { ApprovalPopupContainer } from '../Popup/ApprovalPopupContainer';
 import _ from 'lodash';
 import { normalizeTxParams } from '../SignTx';
 import { Dots } from '../Popup/Dots';
-import { useBatchSignTxTask } from './useBatchSignTxTask';
+import { BatchSignTxTaskType, useBatchSignTxTask } from './useBatchSignTxTask';
 import { MiniFooterBar } from './MiniFooterBar';
 import { useLedgerStatus } from '@/ui/component/ConnectStatus/useLedgerStatus';
 import { useThemeMode } from '@/ui/hooks/usePreference';
+import { useGasAccountSign } from '@/ui/views/GasAccount/hooks';
+import { useGasAccountTxsCheck } from '@/ui/views/GasAccount/hooks/checkTxs';
+import { useEnterPassphraseModal } from '@/ui/hooks/useEnterPassphraseModal';
 
 export const MiniSignTx = ({
   txs,
   onReject,
   onResolve,
-  onSubmit,
+  onStatusChange,
+  ga,
+  getContainer,
 }: {
   txs: Tx[];
   onReject?: () => void;
   onResolve?: () => void;
-  onSubmit?: () => void;
+  onStatusChange?: (status: BatchSignTxTaskType['status']) => void;
+  ga?: Record<string, any>;
+  getContainer?: DrawerProps['getContainer'];
 }) => {
   const chainId = txs[0].chainId;
   const chain = findChain({
@@ -216,7 +223,6 @@ export const MiniSignTx = ({
   const wallet = useWallet();
   const [support1559, setSupport1559] = useState(chain.eip['1559']);
   const [isLedger, setIsLedger] = useState(false);
-  const hasConnectedLedgerHID = useLedgerDeviceConnected();
   const { userData, rules, currentTx, tokenDetail } = useRabbySelector((s) => ({
     userData: s.securityEngine.userData,
     rules: s.securityEngine.rules,
@@ -256,7 +262,7 @@ export const MiniSignTx = ({
     });
   };
 
-  const { swapPreferMEVGuarded, isSwap } = normalizeTxParams(txs[0]);
+  const { swapPreferMEVGuarded, isSwap, isBridge } = normalizeTxParams(txs[0]);
 
   const [pushInfo, setPushInfo] = useState<{
     type: TxPushType;
@@ -307,6 +313,35 @@ export const MiniSignTx = ({
 
   const [noCustomRPC, setNoCustomRPC] = useState(true);
 
+  const gasAccountTxs = useMemo(() => {
+    if (!selectedGas?.price) {
+      return [] as Tx[];
+    }
+    return (
+      txsResult.map((item, index) => {
+        return {
+          ...item.tx,
+          gas: item.gasLimit,
+          gasPrice: intToHex(selectedGas.price),
+        };
+      }) || ([] as Tx[])
+    );
+  }, [txsResult, realNonce, selectedGas?.price]);
+
+  const {
+    gasAccountCost,
+    gasMethod,
+    setGasMethod,
+    isGasAccountLogin,
+    gasAccountCanPay,
+    canGotoUseGasAccount,
+  } = useGasAccountTxsCheck({
+    isReady,
+    txs: gasAccountTxs,
+    noCustomRPC,
+    isSupportedAddr,
+  });
+
   useEffect(() => {
     const hasCustomRPC = async () => {
       if (chain?.enum) {
@@ -322,7 +357,12 @@ export const MiniSignTx = ({
     hasCustomRPC();
   }, [chain?.enum]);
 
-  const task = useBatchSignTxTask();
+  const task = useBatchSignTxTask({
+    ga,
+  });
+  useEffect(() => {
+    onStatusChange?.(task.status);
+  }, [task.status]);
 
   const handleInitTask = useMemoizedFn(() => {
     task.init(
@@ -332,7 +372,8 @@ export const MiniSignTx = ({
           options: {
             chainServerId: chain.serverId,
             gasLevel: selectedGas || undefined,
-            isGasLess: useGasLess,
+            isGasLess: gasMethod === 'native' ? useGasLess : false,
+            isGasAccount: gasAccountCanPay,
             waitCompleted: false,
             pushType: pushInfo.type,
             ignoreGasCheck: true,
@@ -346,9 +387,22 @@ export const MiniSignTx = ({
 
   useEffect(() => {
     handleInitTask();
-  }, [txsResult, chain?.serverId, selectedGas, useGasLess, pushInfo?.type]);
+  }, [
+    txsResult,
+    chain?.serverId,
+    selectedGas,
+    useGasLess,
+    pushInfo?.type,
+    gasAccountCanPay,
+  ]);
+
+  const invokeEnterPassphrase = useEnterPassphraseModal('address');
 
   const handleAllow = useMemoizedFn(async () => {
+    if (currentAccount?.type === KEYRING_TYPE.HdKeyring) {
+      await invokeEnterPassphrase(currentAccount.address);
+    }
+
     if (!txsResult?.length || !selectedGas) {
       return;
     }
@@ -417,10 +471,11 @@ export const MiniSignTx = ({
     chain: Chain,
     custom?: number
   ): Promise<GasLevel[]> => {
-    const list = await wallet.openapi.gasMarket(
-      chain.serverId,
-      custom && custom > 0 ? custom : undefined
-    );
+    const list = await wallet.gasMarketV2({
+      chain,
+      customGas: custom && custom > 0 ? custom : undefined,
+      tx: txs[0],
+    });
     setGasList(list);
     return list;
   };
@@ -462,7 +517,15 @@ export const MiniSignTx = ({
       setGasLessFailedReason(res.desc);
       setGasLessLoading(false);
       if (res.is_gasless && res?.promotion?.config) {
-        setGasLessConfig(res?.promotion?.config);
+        setGasLessConfig(
+          res.promotion.id === '0ca5aaa5f0c9217e6f45fe1d109c24fb'
+            ? {
+                ...res.promotion.config,
+                dark_color: '',
+                theme_color: '',
+              }
+            : res?.promotion?.config
+        );
       }
     } catch (error) {
       console.error('gasLessTxCheck error', error);
@@ -519,7 +582,7 @@ export const MiniSignTx = ({
         customGasPrice = lastTimeGas.gasPrice;
       }
       const gasPrice = txs[0].gasPrice || txs[0].maxFeePerGas;
-      if (isSwap && gasPrice) {
+      if ((isSwap || isBridge) && gasPrice) {
         // use gasPrice set by dapp when it's a speedup or cancel tx
         customGasPrice = parseInt(gasPrice!);
       }
@@ -776,6 +839,7 @@ export const MiniSignTx = ({
         maskStyle={{
           backgroundColor: 'transparent',
         }}
+        getContainer={getContainer}
       >
         <ApprovalPopupContainer
           hdType={'privatekey'}
@@ -795,8 +859,13 @@ export const MiniSignTx = ({
         Header={
           <div
             className={clsx(task.status !== 'idle' && 'pointer-events-none')}
+            key={task.status}
           >
             <GasSelectorHeader
+              tx={txs[0]}
+              gasAccountCost={gasAccountCost}
+              gasMethod={gasMethod}
+              onChangeGasMethod={setGasMethod}
               pushType={pushInfo.type}
               disabled={false}
               isReady={isReady}
@@ -851,9 +920,20 @@ export const MiniSignTx = ({
                 );
                 return totalCost;
               }}
+              getContainer={getContainer}
             />
           </div>
         }
+        noCustomRPC={noCustomRPC}
+        gasMethod={gasMethod}
+        gasAccountCost={gasAccountCost}
+        gasAccountCanPay={gasAccountCanPay}
+        canGotoUseGasAccount={canGotoUseGasAccount}
+        isGasAccountLogin={isGasAccountLogin}
+        isWalletConnect={
+          currentAccountType === KEYRING_TYPE.WalletConnectKeyring
+        }
+        onChangeGasAccount={() => setGasMethod('gasAccount')}
         isWatchAddr={currentAccountType === KEYRING_TYPE.WatchAddressKeyring}
         gasLessConfig={gasLessConfig}
         gasLessFailedReason={gasLessFailedReason}
@@ -897,6 +977,7 @@ export const MiniSignTx = ({
           !canProcess ||
           !!checkErrors.find((item) => item.level === 'forbidden')
         }
+        getContainer={getContainer}
       />
     </>
   );
@@ -908,18 +989,22 @@ export const MiniApproval = ({
   onClose,
   onResolve,
   onReject,
+  ga,
+  getContainer,
 }: {
   txs?: Tx[];
   visible?: boolean;
   onClose?: () => void;
   onReject?: () => void;
   onResolve?: () => void;
+  ga?: Record<string, any>;
+  getContainer?: DrawerProps['getContainer'];
 }) => {
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [status, setStatus] = useState<BatchSignTxTaskType['status']>('idle');
   const { isDarkTheme } = useThemeMode();
   useEffect(() => {
     if (visible) {
-      setIsSubmitting(false);
+      setStatus('idle');
     }
   }, [visible]);
 
@@ -930,7 +1015,7 @@ export const MiniApproval = ({
       className="is-support-darkmode"
       visible={visible}
       onClose={onClose}
-      maskClosable={false}
+      maskClosable={status === 'idle'}
       closable={false}
       bodyStyle={{
         padding: 0,
@@ -941,18 +1026,20 @@ export const MiniApproval = ({
       maskStyle={{
         backgroundColor: !isDarkTheme ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.6)',
       }}
+      getContainer={getContainer}
     >
       {txs?.length ? (
         <MiniSignTx
+          ga={ga}
           txs={txs}
-          onSubmit={() => {
-            setIsSubmitting(true);
+          onStatusChange={(status) => {
+            setStatus(status);
           }}
           onReject={onReject}
           onResolve={() => {
-            setIsSubmitting(false);
             onResolve?.();
           }}
+          getContainer={getContainer}
         />
       ) : null}
     </Popup>

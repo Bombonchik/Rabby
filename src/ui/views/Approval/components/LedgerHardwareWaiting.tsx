@@ -23,6 +23,7 @@ import {
   Props as ApprovalPopupContainerProps,
 } from './Popup/ApprovalPopupContainer';
 import { isLedgerLockError } from '@/ui/utils/ledger';
+import { ga4 } from '@/utils/ga4';
 
 interface ApprovalParams {
   address: string;
@@ -32,6 +33,12 @@ interface ApprovalParams {
   account?: Account;
   $ctx?: any;
   extra?: Record<string, any>;
+  safeMessage?: {
+    safeMessageHash: string;
+    safeAddress: string;
+    message: string;
+    chainId: number;
+  };
 }
 
 const LedgerHardwareWaiting = ({ params }: { params: ApprovalParams }) => {
@@ -146,10 +153,7 @@ const LedgerHardwareWaiting = ({ params }: { params: ApprovalParams }) => {
         method: params?.extra?.signTextMethod,
       });
     }
-    eventBus.addEventListener(EVENTS.LEDGER.REJECT_APPROVAL, (data) => {
-      rejectApproval(data, false, true);
-    });
-    eventBus.addEventListener(EVENTS.LEDGER.REJECTED, async (data) => {
+    eventBus.addEventListener(EVENTS.COMMON_HARDWARE.REJECTED, async (data) => {
       setErrorMessage(data);
       if (/DisconnectedDeviceDuringOperation/i.test(data)) {
         await rejectApproval('User rejected the request.');
@@ -169,11 +173,19 @@ const LedgerHardwareWaiting = ({ params }: { params: ApprovalParams }) => {
           if (params.isGnosis) {
             sig = adjustV('eth_signTypedData', sig);
             const sigs = await wallet.getGnosisTransactionSignatures();
-            if (sigs.length > 0) {
-              await wallet.gnosisAddConfirmation(account.address, sig);
+            const safeMessage = params.safeMessage;
+            if (safeMessage) {
+              await wallet.handleGnosisMessage({
+                signature: data.data,
+                signerAddress: params.account!.address!,
+              });
             } else {
-              await wallet.gnosisAddSignature(account.address, sig);
-              await wallet.postGnosisTransaction();
+              if (sigs.length > 0) {
+                await wallet.gnosisAddConfirmation(account.address, sig);
+              } else {
+                await wallet.gnosisAddSignature(account.address, sig);
+                await wallet.postGnosisTransaction();
+              }
             }
           }
         } catch (e) {
@@ -185,6 +197,10 @@ const LedgerHardwareWaiting = ({ params }: { params: ApprovalParams }) => {
           category: 'Transaction',
           action: 'Submit',
           label: chain?.isTestnet ? 'Custom Network' : 'Integrated Network',
+        });
+
+        ga4.fireEvent(`Submit_${chain?.isTestnet ? 'Custom' : 'Integrated'}`, {
+          event_category: 'Transaction',
         });
 
         setSignFinishedData({
@@ -205,10 +221,10 @@ const LedgerHardwareWaiting = ({ params }: { params: ApprovalParams }) => {
 
   React.useEffect(() => {
     if (firstConnectRef.current) {
-      if (sessionStatus === 'DISCONNECTED') {
-        setVisible(false);
-        message.error(t('page.signFooterBar.ledger.notConnected'));
-      }
+      // if (sessionStatus === 'DISCONNECTED') {
+      //   setVisible(false);
+      //   message.error(t('page.signFooterBar.ledger.notConnected'));
+      // }
     }
 
     if (sessionStatus === 'CONNECTED') {

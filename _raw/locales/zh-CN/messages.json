@@ -199,8 +199,8 @@
         "cancel": "取消",
         "claimRabbyBadge": "领取 Rabby Badge",
         "clearPending": "清除待完成交易",
-        "clearPendingTip1": "这将清除你所有待完成的交易。这可以帮助你解决在某些情况下 Rabby 中的交易状态与链上状态不匹配的问题。",
-        "clearPendingTip2": "这不会改变你帐户中的余额，也不会要求你重新输入助记词。你的所有资产和帐户信息都将保持安全。",
+        "clearPendingTip1": "这将在本地删除所有待处理的交易，并帮助解决因待处理时间过长而导致的问题。",
+        "clearPendingTip2": "它不会影响您的帐户余额或要求您重新输入助记词。\n您的所有资产和帐户信息将保持安全。",
         "clearWatchAddressContent": "你确定删除所有观察地址吗？",
         "clearWatchMode": "清除观察地址",
         "currentVersion": "当前版本",
@@ -248,7 +248,8 @@
         },
         "warning": "警告",
         "requestDeBankTestnetGasToken": "获取 DeBank Testnet Gas Token",
-        "claimFreeGasBadge": "领取 Rabby Free Gas 徽章！"
+        "claimFreeGasBadge": "领取 Rabby Free Gas 徽章！",
+        "clearPendingWarningTip": "待处理的交易将来仍有可能成功提交。"
       },
       "tokenDetail": {
         "blockedTip": "已隐藏的代币将不会显示在代币列表中",
@@ -350,7 +351,7 @@
           "reconnect": "如果无法连接，请尝试<1>从头开始重新连接</1>"
         },
         "keystone": {
-          "title": "*仅Keystone 3(Pro)支持USB连接",
+          "title": "确保您的Keystone 3 Pro位于首页",
           "doc1": "插入一个Keystone",
           "doc2": "输入密码以解锁",
           "doc3": "批准与电脑的连接",
@@ -407,6 +408,7 @@
         "description": "不支持导入多个基于二维码的硬件钱包。\n请先删除 {{0}} 中的所有地址，然后再导入新的设备"
       },
       "connectHardwareWallets": "连接硬件钱包",
+      "firefoxLedgerDisableTips": "Ledger和Firefox不兼容",
       "connectMobileWalletApps": "连接手机钱包",
       "connectInstitutionalWallets": "连接机构钱包",
       "createNewSeedPhrase": "创建新的助记词",
@@ -509,7 +511,7 @@
         "title": "连接Keystone",
         "allowRabbyPermissionsTitle": "允许Rabby访问以下权限：",
         "keystonePermission1": "连接至USB设备",
-        "keystonePermissionTip": "请点击下方的“允许”，并在弹出窗口中授权访问您的 Keystone",
+        "keystonePermissionTip": "请在下方点击“允许”，以在弹出窗口中授权访问您的Keystone，并确保您的Keystone 3 Pro位于首页。",
         "noDeviceFoundError": "请插入一个Keystone",
         "deviceIsLockedError": "输入密码以解锁",
         "deviceRejectedExportAddress": "请批准与 Rabby 的连接",
@@ -782,7 +784,15 @@
             "onChainCancel": {
               "title": "链上取消",
               "desc": "发起新的链上交易来取消，需要Gasfee"
+            },
+            "removeLocalPendingTx": {
+              "title": "本地删除交易",
+              "desc": "修复因等待时间过长导致交易阻塞的问题"
             }
+          },
+          "removeLocalPendingTx": {
+            "title": "本地删除交易",
+            "desc": "此操作将在本地删除待处理的事务。\n待处理的交易将来仍有可能成功提交。"
           }
         },
         "SkipNonceAlert": {
@@ -896,6 +906,7 @@
         "revokeOneByOne": "一一撤销",
         "resume": "继续",
         "pause": "暂停",
+        "useGasAccount": "Gas余额不足，你的GasAccount账户将支付这笔Gas费",
         "gasNotEnough": "Gas 不足，无法提交",
         "submitTxFailed": "提交失败",
         "gasTooHigh": "煤气费高",
@@ -908,7 +919,8 @@
         "ledgerSigned": "签署。创建交易（{{current}}/{{total}}）",
         "ledgerSending": "正在发送签名请求（{{current}}/{{total}}）",
         "confirmRevokeLedger": "使用账本地址，您可以一键批量撤销 {{count}} 个批准。",
-        "confirmRevokePrivateKey": "使用助记词或私钥地址，您可以一键批量撤销 {{count}} 个批准。"
+        "confirmRevokePrivateKey": "使用助记词或私钥地址，您可以一键批量撤销 {{count}} 个批准。",
+        "simulationFailed": "交易模拟失败"
       }
     },
     "connect": {
@@ -1232,15 +1244,16 @@
       },
       "keystone": {
         "signWith": "切换到{{method}}进行签名",
+        "qrcodeDesc": "扫描以签名。签名后，点击下面获取签名。对于USB，重新连接并授权以重新开始签名过程",
         "misMatchSignId": "交易数据不一致。请检查交易详情。",
         "unsupportedType": "错误：交易类型不支持或未知。",
         "siging": "正在发送签名请求",
         "txRejected": "交易被拒绝",
         "shouldRetry": "发生了某些错误。请重试。",
-        "hardwareRejectError": "硬件拒绝了签名请求",
+        "hardwareRejectError": "Keystone 请求已取消。要继续，请重新授权。",
         "mismatchedWalletError": "钱包不匹配",
         "verifyPasswordError": "签名失败，请解锁后重试",
-        "shouldOpenKeystoneHomePageError": "请打开 Keystone 主页"
+        "shouldOpenKeystoneHomePageError": "确保您的Keystone 3 Pro位于首页"
       },
       "resend": "重试",
       "submitTx": "提交",
@@ -1698,7 +1711,8 @@
         "error": "密码错误",
         "placeholder": "输入密码解锁",
         "required": "输入密码解锁"
-      }
+      },
+      "btnForgotPassword": "忘记密码？"
     },
     "addressDetail": {
       "add-to-whitelist": "添加到白名单",
@@ -2034,6 +2048,45 @@
     },
     "sign": {
       "transactionSpeed": "交易速度"
+    },
+    "forgotPassword": {
+      "home": {
+        "buttonNoData": "设置新密码",
+        "button": "开始重置流程",
+        "title": "忘记密码",
+        "description": "Rabby不会保存你的密码,因此丢失密码无法找回 如果忘记密码只能重置钱包并重新设置密码",
+        "descriptionNoData": "Rabby不会保存你的密码,因此丢失密码无法找回 如果忘记密码只能重新设置密码"
+      },
+      "reset": {
+        "title": "重置 Rabby Wallet",
+        "alert": {
+          "title": "重置后会清除以下数据,且无法帮你找回",
+          "seed": "助记词",
+          "privateKey": "私钥"
+        },
+        "tip": {
+          "title": "会保留以下数据",
+          "hardware": "已导入的硬件钱包地址",
+          "safe": "已导入的 Safe 地址",
+          "watch": "已导入的观察地址",
+          "whitelist": "转账白名单",
+          "records": "签名记录"
+        },
+        "confirm": "如确认重置钱包, 请输入: <1>RESET</1>",
+        "button": "确认重置"
+      },
+      "success": {
+        "title": "密码创建成功",
+        "description": "请继续使用 Rabby",
+        "button": "完成"
+      },
+      "tip": {
+        "title": "Rabby Wallet 已经重置",
+        "button": "设置新密码",
+        "buttonNoData": "重新导入地址",
+        "description": "请设定一个新的密码继续使用钱包",
+        "descriptionNoData": "请重新导入地址后使用钱包"
+      }
     }
   },
   "component": {

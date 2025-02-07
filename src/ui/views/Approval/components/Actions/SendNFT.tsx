@@ -3,7 +3,10 @@ import styled from 'styled-components';
 import { useTranslation } from 'react-i18next';
 import { Chain } from 'background/service/openapi';
 import { Result } from '@rabby-wallet/rabby-security-engine';
-import { ParsedActionData, SendNFTRequireData } from './utils';
+import {
+  SendNFTRequireData,
+  ParsedTransactionActionData,
+} from '@rabby-wallet/rabby-action';
 import { useRabbyDispatch } from '@/ui/store';
 import { Table, Col, Row } from './components/Table';
 import LogoWithText from './components/LogoWithText';
@@ -52,7 +55,7 @@ const SendNFT = ({
   chain,
   engineResults,
 }: {
-  data: ParsedActionData['sendNFT'];
+  data: ParsedTransactionActionData['sendNFT'];
   requireData: SendNFTRequireData;
   chain: Chain;
   engineResults: Result[];
@@ -183,7 +186,7 @@ const SendNFT = ({
                     textStyle={{
                       fontSize: '13px',
                       lineHeight: '15px',
-                      color: '#4B4D59',
+                      color: 'var(--r-neutral-body, #4B4D59)',
                       fontWeight: 'normal',
                     }}
                   />

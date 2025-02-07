@@ -199,7 +199,7 @@
         "cancel": "取消",
         "claimRabbyBadge": "領取 Rabby Badge",
         "clearPending": "清除待完成交易",
-        "clearPendingTip1": "這將清除你所有待完成的交易。這可以幫助你解決在某些情況下 Rabby 中的交易狀態與鏈上狀態不匹配的問題。",
+        "clearPendingTip1": "這將在本地刪除所有待處理的交易，並幫助解決因待處理時間過長而導致的問題。",
         "clearPendingTip2": "這不會改變你帳戶中的結餘，也不會要求你重新輸入助記詞。你的所有資產和帳戶信息都將保持安全。",
         "clearWatchAddressContent": "你確定刪除所有觀察地址嗎？",
         "clearWatchMode": "清除觀察地址",
@@ -248,7 +248,8 @@
         },
         "warning": "警告",
         "requestDeBankTestnetGasToken": "獲取 DeBank Testnet Gas Token",
-        "claimFreeGasBadge": "申請 Rabby Free Gas 徽章！"
+        "claimFreeGasBadge": "申請 Rabby Free Gas 徽章！",
+        "clearPendingWarningTip": "待處理的交易將來仍有可能成功提交。"
       },
       "tokenDetail": {
         "blockedTip": "已隱藏的代幣將不會顯示在代幣列表中",
@@ -350,7 +351,7 @@
           "reconnect": "如果無法連接，請嘗試<1>從頭開始重新連接</1>"
         },
         "keystone": {
-          "title": "*僅Keystone 3(Pro)支持USB連接",
+          "title": "確保您的Keystone 3 Pro位於首頁",
           "doc1": "插入一個Keystone",
           "doc2": "輸入密碼以解鎖",
           "doc3": "批準與電腦的連接",
@@ -502,7 +503,7 @@
         "title": "連接Keystone",
         "allowRabbyPermissionsTitle": "允許Rabby訪問以下權限：",
         "keystonePermission1": "連接至USB設備",
-        "keystonePermissionTip": "請點擊下方的“允許”，並在彈出窗口中授權訪問您的 Keystone",
+        "keystonePermissionTip": "請在下方點擊「允許」，以在彈出視窗中授權訪問您的Keystone，並確保您的Keystone 3 Pro位於首頁。",
         "noDeviceFoundError": "請插入一個Keystone",
         "deviceIsLockedError": "輸入密碼以解鎖",
         "deviceRejectedExportAddress": "請批準與 Rabby 的連接",
@@ -775,7 +776,15 @@
             "onChainCancel": {
               "title": "鏈上取消",
               "desc": "發起新的鏈上交易來取消，需要Gasfee"
+            },
+            "removeLocalPendingTx": {
+              "title": "本地刪除交易",
+              "desc": "修復因等待時間過長導致交易阻塞的問題"
             }
+          },
+          "removeLocalPendingTx": {
+            "title": "本地刪除交易",
+            "desc": "此操作將在本機刪除待處理的事務。\n待處理的交易將來仍有可能成功提交。"
           }
         },
         "SkipNonceAlert": {
@@ -1195,15 +1204,16 @@
       },
       "keystone": {
         "signWith": "切換到{{method}}進行簽名",
+        "qrcodeDesc": "掃描以簽名。簽名後，點擊下面獲取簽名。對於USB，重新連接並授權以重新開始簽名過程",
         "misMatchSignId": "交易數據不一致。請檢查交易詳情。",
         "unsupportedType": "錯誤：交易類型不支持或未知。",
         "siging": "正在發送簽名請求",
         "txRejected": "交易被拒絕",
         "shouldRetry": "發生了某些錯誤。請重試。",
-        "hardwareRejectError": "硬件拒絕了簽名請求",
+        "hardwareRejectError": "Keystone 請求已取消。要繼續，請重新授權。",
         "mismatchedWalletError": "錢包不匹配",
         "verifyPasswordError": "簽名失敗，請解鎖後重試",
-        "shouldOpenKeystoneHomePageError": "請打開 Keystone 主頁"
+        "shouldOpenKeystoneHomePageError": "確保您的Keystone 3 Pro位於首頁"
       },
       "resend": "重試",
       "submitTx": "提交",

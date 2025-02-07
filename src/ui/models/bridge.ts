@@ -8,6 +8,7 @@ import {
   DEFAULT_BRIDGE_AGGREGATOR,
   DEFAULT_BRIDGE_SUPPORTED_CHAIN,
 } from '@/constant/bridge';
+import { findChainByServerID } from '@/utils/chain';
 
 export const bridge = createModel<RootModel>()({
   name: 'bridge',
@@ -115,14 +116,16 @@ export const bridge = createModel<RootModel>()({
     },
 
     async fetchSupportedChains(_: void, store) {
-      const chains = await store.app.wallet.openapi.getBridgeSupportChain();
+      const chains = await store.app.wallet.openapi.getBridgeSupportChainV2();
       if (chains.length) {
         const mappings = Object.values(CHAINS).reduce((acc, chain) => {
           acc[chain.serverId] = chain.enum;
           return acc;
         }, {} as Record<string, CHAINS_ENUM>);
         this.setField({
-          supportedChains: chains.map((item) => mappings[item]),
+          supportedChains: chains.map(
+            (item) => findChainByServerID(item)?.enum || mappings[item]
+          ),
         });
       }
     },

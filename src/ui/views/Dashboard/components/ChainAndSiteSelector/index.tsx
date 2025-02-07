@@ -21,9 +21,7 @@ import IconReceive, {
   ReactComponent as RcIconReceive,
 } from 'ui/assets/dashboard/receive.svg';
 import { ReactComponent as RcIconBridge } from 'ui/assets/dashboard/bridge.svg';
-import IconGasTopUp, {
-  ReactComponent as RcIconGasTopUp,
-} from 'ui/assets/dashboard/gas-top-up.svg';
+
 import IconNFT, {
   ReactComponent as RcIconNFT,
 } from 'ui/assets/dashboard/nft.svg';
@@ -57,6 +55,7 @@ import { useTranslation } from 'react-i18next';
 import ThemeIcon from '@/ui/component/ThemeMode/ThemeIcon';
 import { EcologyPopup } from '../EcologyPopup';
 import { appIsDev } from '@/utils/env';
+import { ga4 } from '@/utils/ga4';
 
 export default ({
   gnosisPendingCount,
@@ -85,8 +84,6 @@ export default ({
   );
   const [drawerAnimation, setDrawerAnimation] = useState<string | null>(null);
   const [badgeModalVisible, setBadgeModalVisible] = useState(false);
-
-  const [rabbyPointsVisible, setRabbyPointVisible] = useState(false);
 
   const [settingVisible, setSettingVisible] = useState(false);
   const [currentConnect, setCurrentConnect] = useState<
@@ -227,14 +224,6 @@ export default ({
         setIsShowReceiveModal(true);
       },
     } as IPanelItem,
-    gasTopUp: {
-      icon: RcIconGasTopUp,
-      eventKey: 'Gas Top Up',
-      content: t('page.dashboard.home.panel.gasTopUp'),
-      onClick: () => {
-        history.push('/gas-top-up');
-      },
-    } as IPanelItem,
     queue: {
       icon: RcIconQuene,
       eventKey: 'Queue',
@@ -361,6 +350,11 @@ export default ({
                     action: 'clickEntry',
                     label: item.eventKey,
                   });
+
+                  ga4.fireEvent(`Entry_${item.eventKey}`, {
+                    event_category: 'Dashboard',
+                  });
+
                   item?.onClick(evt);
                 }}
                 className="direction pointer"
@@ -417,6 +411,7 @@ export default ({
         className="receive-chain-select-modal"
         value={CHAINS_ENUM.ETH}
         visible={isShowReceiveModal}
+        showRPCStatus
         onChange={(chain) => {
           history.push(`/receive?rbisource=dashboard&chain=${chain}`);
           setIsShowReceiveModal(false);

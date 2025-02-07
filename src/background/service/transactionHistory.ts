@@ -9,23 +9,21 @@ import openapiService, {
   testnetOpenapiService,
   TxRequest,
 } from './openapi';
-import { CHAINS, INTERNAL_REQUEST_ORIGIN, CHAINS_ENUM, EVENTS } from 'consts';
+import { INTERNAL_REQUEST_ORIGIN, CHAINS_ENUM, EVENTS } from 'consts';
 import stats from '@/stats';
 import permissionService, { ConnectedSite } from './permission';
 import { nanoid } from 'nanoid';
 import { findChain, findChainByID } from '@/utils/chain';
 import { makeTransactionId } from '@/utils/transaction';
-import {
-  ActionRequireData,
-  ParsedActionData,
-} from '@/ui/views/Approval/components/Actions/utils';
-import { sortBy, max, groupBy } from 'lodash';
+import { sortBy, groupBy } from 'lodash';
 import { checkIsPendingTxGroup, findMaxGasTx } from '@/utils/tx';
 import eventBus from '@/eventBus';
 import { customTestnetService } from './customTestnet';
-import { isManifestV3 } from '@/utils/env';
-import browser from 'webextension-polyfill';
-import { ALARMS_RELOAD_TX } from '../utils/alarms';
+import {
+  ActionRequireData,
+  ParsedTransactionActionData,
+} from '@rabby-wallet/rabby-action';
+import { uninstalledService } from '.';
 
 export interface TransactionHistoryItem {
   rawTx: Tx;
@@ -51,7 +49,7 @@ export interface TransactionSigningItem {
     { approvalId: string; calcSuccess: boolean }
   >;
   action?: {
-    actionData: ParsedActionData;
+    actionData: ParsedTransactionActionData;
     requiredData: ActionRequireData;
   };
   id: string;
@@ -69,7 +67,7 @@ export interface TransactionGroup {
     { approvalId: string; calcSuccess: boolean }
   >;
   action?: {
-    actionData: ParsedActionData;
+    actionData: ParsedTransactionActionData;
     requiredData: ActionRequireData;
   };
   isFailed: boolean;
@@ -94,6 +92,8 @@ class TxHistory {
   private _txHistoryLimit = 100;
 
   addSigningTx(tx: Tx) {
+    uninstalledService.setTx();
+
     const id = nanoid();
 
     this._signingTxList.push({
@@ -122,7 +122,7 @@ class TxHistory {
       explain?: Partial<TransactionSigningItem['explain']>;
       rawTx?: Partial<TransactionSigningItem['rawTx']>;
       action?: {
-        actionData: ParsedActionData;
+        actionData: ParsedTransactionActionData;
         requiredData: ActionRequireData;
       };
       isSubmitted?: boolean;
@@ -856,6 +856,36 @@ class TxHistory {
     });
   }
 
+  removeLocalPendingTx({
+    address,
+    chainId,
+    nonce,
+  }: {
+    address: string;
+    chainId: number;
+    nonce: number;
+  }) {
+    const transactions = this.store.transactions[address.toLowerCase()];
+    if (!transactions) return;
+    this._setStoreTransaction({
+      ...this.store.transactions,
+      [address.toLowerCase()]: Object.values(transactions)
+        .filter((transaction) => {
+          return !(
+            transaction.isPending &&
+            +chainId === +transaction.chainId &&
+            +transaction.nonce === +nonce
+          );
+        })
+        .reduce((res, current) => {
+          return {
+            ...res,
+            [`${current.chainId}-${current.nonce}`]: current,
+          };
+        }, {}),
+    });
+  }
+
   getPendingTxByHash(hash: string) {
     for (const address in this.store.transactions) {
       const addressTxMap = this.store.transactions[address];
@@ -914,34 +944,6 @@ class TxHistory {
     }
 
     return maxLocalOrProcessingNonce + 1;
-  }
-
-  getSkipedTxs(address: string) {
-    const dict = groupBy(
-      Object.values(this.store.transactions[address.toLowerCase()] || {}),
-      (item) => item.chainId
-    );
-
-    return Object.entries(dict).reduce((res, [key, list]) => {
-      const maxNonce =
-        maxBy(
-          list.filter((item) => {
-            const maxGasTx = findMaxGasTx(item.txs);
-            return !item.isSubmitFailed && !maxGasTx?.isWithdrawed;
-          }),
-          (item) => item.nonce
-        )?.nonce || 0;
-
-      res[key] = sortBy(
-        list.filter(
-          (item) =>
-            item.nonce < maxNonce && findMaxGasTx(item.txs)?.isWithdrawed
-        ),
-        (item) => -item.nonce
-      );
-
-      return res;
-    }, {} as Record<string, TransactionGroup[]>);
   }
 
   quickCancelTx = async ({

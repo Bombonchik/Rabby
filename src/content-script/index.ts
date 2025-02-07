@@ -28,7 +28,7 @@ const injectProviderScript = (isDefaultWallet: boolean) => {
   // in prevent of webpack optimized code do some magic(e.g. double/sigle quote wrap),
   // separate content assignment to two line
   // use AssetReplacePlugin to replace pageprovider content
-  ele.setAttribute('src', chrome.runtime.getURL('pageProvider.js'));
+  ele.setAttribute('src', browser.runtime.getURL('pageProvider.js'));
   container.insertBefore(ele, container.children[0]);
   container.removeChild(ele);
 };
@@ -42,6 +42,7 @@ const bcm = new BroadcastChannelMessage({
   name: 'rabby-content-script',
   target: 'rabby-page-provider',
 }).listen((data) => {
+  browser.runtime.sendMessage({ type: 'ping' });
   if (pm) {
     return pm?.request(data);
   }
@@ -71,6 +72,7 @@ const setupExtensionStreams = () => {
   pm?.on('message', handlePmMessage);
   defer.resolve?.(pm);
   pm?.port?.onDisconnect.addListener(onDisconnectDestroyStreams);
+  bcm.send('message', { event: 'contentScriptConnected' });
 };
 
 setupExtensionStreams();

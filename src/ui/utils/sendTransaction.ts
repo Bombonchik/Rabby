@@ -1,11 +1,14 @@
 import {
+  ALIAS_ADDRESS,
   CHAINS_ENUM,
   EVENTS,
   INTERNAL_REQUEST_ORIGIN,
   INTERNAL_REQUEST_SESSION,
+  KEYRING_TYPE,
+  KEYRING_CATEGORY_MAP,
 } from '@/constant';
 import { intToHex, WalletControllerType } from '@/ui/utils';
-import { findChain } from '@/utils/chain';
+import { findChain, isTestnet } from '@/utils/chain';
 import {
   calcGasLimit,
   calcMaxPriorityFee,
@@ -16,22 +19,63 @@ import {
 } from '@/utils/transaction';
 import { GasLevel, Tx, TxPushType } from '@rabby-wallet/rabby-api/dist/types';
 import BigNumber from 'bignumber.js';
-import {
-  fetchActionRequiredData,
-  parseAction,
-} from '@/ui/views/Approval/components/Actions/utils';
 import Browser from 'webextension-polyfill';
 import eventBus from '@/eventBus';
+import {
+  parseAction,
+  fetchActionRequiredData,
+} from '@rabby-wallet/rabby-action';
+import stats from '@/stats';
 
 // fail code
 export enum FailedCode {
   GasNotEnough = 'GasNotEnough',
   GasTooHigh = 'GasTooHigh',
   SubmitTxFailed = 'SubmitTxFailed',
+  SimulationFailed = 'SimulationFailed',
   DefaultFailed = 'DefaultFailed',
 }
 
 type ProgressStatus = 'building' | 'builded' | 'signed' | 'submitted';
+
+const checkEnoughUseGasAccount = async ({
+  gasAccount,
+  wallet,
+  transaction,
+  currentAccountType,
+}: {
+  transaction: Tx;
+  currentAccountType: string;
+  wallet: WalletControllerType;
+  gasAccount?: {
+    sig: string | undefined;
+    accountId: string | undefined;
+  };
+}) => {
+  let gasAccountCanPay: boolean = false;
+
+  // native gas not enough check gasAccount
+  let gasAccountVerfiyPass = true;
+  let gasAccountCost;
+  try {
+    gasAccountCost = await wallet.openapi.checkGasAccountTxs({
+      sig: gasAccount?.sig || '',
+      account_id: gasAccount?.accountId || '',
+      tx_list: [transaction],
+    });
+  } catch (e) {
+    gasAccountVerfiyPass = false;
+  }
+  gasAccountCanPay =
+    gasAccountVerfiyPass &&
+    currentAccountType !== KEYRING_TYPE.WalletConnectKeyring &&
+    currentAccountType !== KEYRING_TYPE.WatchAddressKeyring &&
+    !!gasAccountCost?.balance_is_enough &&
+    !gasAccountCost.chain_not_support &&
+    !!gasAccountCost.is_gas_account;
+
+  return gasAccountCanPay;
+};
 
 /**
  * send transaction without rpcFlow
@@ -43,6 +87,10 @@ type ProgressStatus = 'building' | 'builded' | 'signed' | 'submitted';
  * @param gasLevel gas level, default is normal
  * @param lowGasDeadline low gas deadline
  * @param isGasLess is gas less
+ * @param isGasAccount is gas account
+ * @param gasAccount gas account { sig, account }
+ * @param autoUseGasAccount when gas balance is low , auto use gas account for gasfee
+ * @param onUseGasAccount use gas account callback
  */
 export const sendTransaction = async ({
   tx,
@@ -53,9 +101,14 @@ export const sendTransaction = async ({
   gasLevel,
   lowGasDeadline,
   isGasLess,
+  isGasAccount,
+  gasAccount,
+  autoUseGasAccount,
   waitCompleted = true,
   pushType = 'default',
   ignoreGasNotEnoughCheck,
+  onUseGasAccount,
+  ga,
 }: {
   tx: Tx;
   chainServerId: string;
@@ -63,18 +116,26 @@ export const sendTransaction = async ({
   ignoreGasCheck?: boolean;
   ignoreGasNotEnoughCheck?: boolean;
   onProgress?: (status: ProgressStatus) => void;
+  onUseGasAccount?: () => void;
   gasLevel?: GasLevel;
   lowGasDeadline?: number;
   isGasLess?: boolean;
+  isGasAccount?: boolean;
+  gasAccount?: {
+    sig: string | undefined;
+    accountId: string | undefined;
+  };
+  autoUseGasAccount?: boolean;
   waitCompleted?: boolean;
   pushType?: TxPushType;
+  ga?: Record<string, any>;
 }) => {
   onProgress?.('building');
   const chain = findChain({
     serverId: chainServerId,
   })!;
   const support1559 = chain.eip['1559'];
-  const { address } = (await wallet.getCurrentAccount())!;
+  const { address, ...currentAccount } = (await wallet.getCurrentAccount())!;
   const recommendNonce = await wallet.getRecommendNonce({
     from: tx.from,
     chainId: chain.id,
@@ -83,11 +144,25 @@ export const sendTransaction = async ({
   // get gas
   let normalGas = gasLevel;
   if (!normalGas) {
-    const gasMarket = await wallet.openapi.gasMarket(chainServerId);
+    const gasMarket = await wallet.gasMarketV2({
+      chain,
+      tx,
+    });
     normalGas = gasMarket.find((item) => item.level === 'normal')!;
   }
 
   const signingTxId = await wallet.addSigningTx(tx);
+
+  wallet.reportStats('createTransaction', {
+    type: currentAccount.brandName,
+    category: KEYRING_CATEGORY_MAP[currentAccount.type],
+    chainId: chain.serverId,
+    createdBy: ga ? 'rabby' : 'dapp',
+    source: ga?.source || '',
+    trigger: ga?.trigger || '',
+    networkType: chain?.isTestnet ? 'Custom Network' : 'Integrated Network',
+    swapUseSlider: ga?.swapUseSlider ?? '',
+  });
 
   // pre exec tx
   const preExecResult = await wallet.openapi.preExecTx({
@@ -182,9 +257,52 @@ export const sendTransaction = async ({
     ? (await Browser.storage.local.get('DEBUG_OTHER_CHAIN_GAS_USD_LIMIT'))
         .DEBUG_OTHER_CHAIN_GAS_USD_LIMIT || 5
     : 5;
+  const DEBUG_SIMULATION_FAILED = process.env.DEBUG
+    ? (await Browser.storage.local.get('DEBUG_SIMULATION_FAILED'))
+        .DEBUG_SIMULATION_FAILED
+    : false;
+
+  // generate tx with gas
+  const transaction: Tx = {
+    from: tx.from,
+    to: tx.to,
+    data: tx.data,
+    nonce: recommendNonce,
+    value: tx.value,
+    chainId: tx.chainId,
+    gas: gasLimit,
+  };
+
   let failedCode;
-  if (isGasNotEnough) {
-    failedCode = FailedCode.GasNotEnough;
+  let canUseGasAccount: boolean = false;
+
+  // random simulation failed for test
+  if (DEBUG_SIMULATION_FAILED && Math.random() > 0.5) {
+    failedCode = FailedCode.SimulationFailed;
+  } else if (!preExecResult?.balance_change?.success) {
+    failedCode = FailedCode.SimulationFailed;
+  } else if (isGasNotEnough) {
+    //  native gas not enough check gasAccount
+    if (autoUseGasAccount && gasAccount?.sig && gasAccount?.accountId) {
+      const gasAccountCanPay = await checkEnoughUseGasAccount({
+        gasAccount,
+        currentAccountType: currentAccount.type,
+        wallet,
+        transaction: {
+          ...transaction,
+          gas: gasLimit,
+          gasPrice: intToHex(normalGas.price),
+        },
+      });
+      if (gasAccountCanPay) {
+        onUseGasAccount?.();
+        canUseGasAccount = true;
+      } else {
+        failedCode = FailedCode.GasNotEnough;
+      }
+    } else {
+      failedCode = FailedCode.GasNotEnough;
+    }
   } else if (
     !ignoreGasCheck &&
     // eth gas > $20
@@ -204,16 +322,6 @@ export const sendTransaction = async ({
     };
   }
 
-  // generate tx with gas
-  const transaction: Tx = {
-    from: tx.from,
-    to: tx.to,
-    data: tx.data,
-    nonce: recommendNonce,
-    value: tx.value,
-    chainId: tx.chainId,
-    gas: gasLimit,
-  };
   const maxPriorityFee = calcMaxPriorityFee([], normalGas, chain.id, true);
   const maxFeePerGas = intToHex(Math.round(normalGas.price));
 
@@ -240,31 +348,44 @@ export const sendTransaction = async ({
     origin: origin || '',
     addr: address,
   });
-  const parsed = parseAction(
-    actionData.action,
-    preExecResult.balance_change,
-    {
-      ...tx,
-      gas: '0x0',
-      nonce: recommendNonce || '0x1',
-      value: tx.value || '0x0',
-    },
-    preExecResult.pre_exec_version,
-    preExecResult.gas.gas_used
-  );
-  const requiredData = await fetchActionRequiredData({
-    actionData: parsed,
-    contractCall: actionData.contract_call,
-    chainId: chain.serverId,
-    address,
-    wallet,
+  const parsed = parseAction({
+    type: 'transaction',
+    data: actionData.action,
+    balanceChange: preExecResult.balance_change,
     tx: {
       ...tx,
       gas: '0x0',
       nonce: recommendNonce || '0x1',
       value: tx.value || '0x0',
     },
-    origin,
+    preExecVersion: preExecResult.pre_exec_version,
+    gasUsed: preExecResult.gas.gas_used,
+    sender: tx.from,
+  });
+  const requiredData = await fetchActionRequiredData({
+    type: 'transaction',
+    actionData: parsed,
+    contractCall: actionData.contract_call,
+    chainId: chain.serverId,
+    sender: address,
+    walletProvider: {
+      hasPrivateKeyInWallet: wallet.hasPrivateKeyInWallet,
+      hasAddress: wallet.hasAddress,
+      getWhitelist: wallet.getWhitelist,
+      isWhitelistEnabled: wallet.isWhitelistEnabled,
+      getPendingTxsByNonce: wallet.getPendingTxsByNonce,
+      findChain,
+      ALIAS_ADDRESS,
+    },
+    tx: {
+      ...tx,
+      gas: '0x0',
+      nonce: recommendNonce || '0x1',
+      value: tx.value || '0x0',
+    },
+    apiProvider: isTestnet(chain.serverId)
+      ? wallet.testnetOpenapi
+      : wallet.openapi,
   });
 
   await wallet.updateSigningTx(signingTxId, {
@@ -273,6 +394,7 @@ export const sendTransaction = async ({
     },
     explain: {
       ...preExecResult,
+      calcSuccess: !(checkErrors.length > 0),
     },
     action: {
       actionData: parsed,
@@ -303,36 +425,80 @@ export const sendTransaction = async ({
     }
   }
 
+  const handleSendAfter = async () => {
+    const statsData = await wallet.getStatsData();
+
+    if (statsData?.signed) {
+      const sData: any = {
+        type: statsData?.type,
+        chainId: statsData?.chainId,
+        category: statsData?.category,
+        success: statsData?.signedSuccess,
+        preExecSuccess: statsData?.preExecSuccess,
+        createdBy: statsData?.createdBy,
+        source: statsData?.source,
+        trigger: statsData?.trigger,
+        networkType: statsData?.networkType,
+      };
+      if (statsData.signMethod) {
+        sData.signMethod = statsData.signMethod;
+      }
+      stats.report('signedTransaction', sData);
+    }
+    if (statsData?.submit) {
+      stats.report('submitTransaction', {
+        type: statsData?.type,
+        chainId: statsData?.chainId,
+        category: statsData?.category,
+        success: statsData?.submitSuccess,
+        preExecSuccess: statsData?.preExecSuccess,
+        createdBy: statsData?.createdBy,
+        source: statsData?.source,
+        trigger: statsData?.trigger,
+        networkType: statsData?.networkType || '',
+      });
+    }
+  };
+
+  wallet.reportStats('signTransaction', {
+    type: currentAccount.brandName,
+    category: KEYRING_CATEGORY_MAP[currentAccount.type],
+    chainId: chain.serverId,
+    createdBy: ga ? 'rabby' : 'dapp',
+    source: ga?.source || '',
+    trigger: ga?.trigger || '',
+    networkType: chain?.isTestnet ? 'Custom Network' : 'Integrated Network',
+  });
+
   // submit tx
   let hash = '';
   try {
-    hash = await Promise.race([
-      wallet.ethSendTransaction({
-        data: {
-          $ctx: {},
-          params: [transaction],
+    hash = await wallet.ethSendTransaction({
+      data: {
+        $ctx: {
+          ga,
         },
-        session: INTERNAL_REQUEST_SESSION,
-        approvalRes: {
-          ...transaction,
-          signingTxId,
-          logId: logId,
-          lowGasDeadline,
-          isGasLess,
-          pushType,
-        },
-        pushed: false,
-        result: undefined,
-      }),
-      new Promise((_, reject) => {
-        eventBus.once(EVENTS.LEDGER.REJECTED, async (data) => {
-          reject(new Error(data));
-        });
-      }),
-    ]);
+        params: [transaction],
+      },
+      session: INTERNAL_REQUEST_SESSION,
+      approvalRes: {
+        ...transaction,
+        signingTxId,
+        logId: logId,
+        lowGasDeadline,
+        isGasLess,
+        isGasAccount: autoUseGasAccount ? canUseGasAccount : isGasAccount,
+        pushType,
+      },
+      pushed: false,
+      result: undefined,
+    });
+    await handleSendAfter();
   } catch (e) {
+    await handleSendAfter();
     const err = new Error(e.message);
     err.name = FailedCode.SubmitTxFailed;
+    eventBus.emit(EVENTS.COMMON_HARDWARE.REJECTED, e.message);
     throw err;
   }
 
